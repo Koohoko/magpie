@@ -1650,6 +1650,10 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 			continue
 		}
 		if !last && hw.failed() && failure(hw.code(), hw.errBody()) == failAuth {
+			// the account's sign-in is gone, refused by Anthropic: no rest
+			// brings it back, so none is told; it is passed over until it
+			// is signed in again (provider/claude_auth.go), and the next
+			// one is asked
 			if other == nil {
 				other = &Try{Status: call.Status, Error: call.Error}
 			}

@@ -130,6 +130,9 @@ type subscriptionRun struct {
 	// --effort) or was told since (setEffort); "" is Claude Code's own
 	effort string
 
+	// loginVersion is the credential the run's account had when it
+	// started (provider.ClaudeLoginVersion), which a refusal it reports is
+	// kept for
 	loginVersion string
 
 	// told is the conversation as the client had it in its last request
@@ -856,6 +859,9 @@ func (r *subscriptionRun) readOutput(rd io.Reader) {
 						text += ": " + strings.Join(envelope.Errors, "; ")
 					}
 				}
+				// Anthropic refused the account's sign-in: kept on it, so
+				// it isn't run again on that one (provider/claude_auth.go) —
+				// not when Claude Code's own run went on as another account
 				if fields := strings.Split(r.owner, "\x00"); len(fields) > 1 &&
 					!(len(fields) > 2 && fields[2] == ownHome && provider.ClaudeCodeMovedOff(fields[1])) {
 					provider.NoteClaudeSignInFailure(fields[1], r.loginVersion, text)
