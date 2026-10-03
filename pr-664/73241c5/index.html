@@ -1,0 +1,17 @@
+<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#664 界面预览 · 73241c5</title>
+<style>:root{color-scheme:light dark;--bg:#f6f6f7;--fg:#1d1d1f;--muted:#6e6e73;--card:#fff;--line:#e5e5ea}
+@media (prefers-color-scheme:dark){:root{--bg:#111113;--fg:#f2f2f4;--muted:#9a9aa0;--card:#1c1c1f;--line:#2c2c30}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 -apple-system,"Segoe UI","PingFang SC","Noto Sans CJK SC",sans-serif}
+main{max-width:1100px;margin:0 auto;padding:28px 16px 60px}h1{font-size:20px;margin:0 0 4px}.m{color:var(--muted);font-size:13px;margin:0 0 20px}
+video,img{display:block;width:100%;border-radius:10px;border:1px solid var(--line);background:var(--card)}figure{margin:0 0 28px}figcaption{color:var(--muted);font-size:13px;margin-top:8px}
+a{color:inherit}</style>
+<main><h1>#664 界面预览</h1><p class="m">commit 73241c5 · <a href="https://github.com/yetone/magpie/pull/664">回到 PR</a> · 这个 PR 在界面上看到的是「用量」页概览的数据读取方式：概览的每次读取（读者切周期/切标签触发的与定时/手动刷新触发的）现在共用同一个读取序号，只有最新一次的结果会被画出来，而且定时读取即使拿到与手上完全相同的数据，也会结束被顶掉的那次读取留下的骨架；供应商页那轮「列表还在路上」的轮询在读取或重载失败后也会重新排下一次，而不是就此停住。其余改动是 internal/plugin 的宿主读取与 CI/测试。</p>
+<figure><video src="preview.mp4" controls autoplay muted playsinline poster="poster.png"></video><figcaption>红线是鼠标走过的轨迹，红色圆环是一次点击；底部文字是这一步在做什么。空格暂停，← → 逐段查看。</figcaption></figure>
+<figure><img src="01-usage-overview-today.png" alt="打开「用量」页，概览停在「今天」"><figcaption>用量概览的周期与刷新 · 打开「用量」页，概览停在「今天」</figcaption></figure>
+<figure><img src="02-usage-overview-week.png" alt="「7 天」周期的概览"><figcaption>用量概览的周期与刷新 · 「7 天」周期的概览</figcaption></figure>
+<figure><img src="03-usage-overview-back.png" alt="切回「今天」后的概览"><figcaption>用量概览的周期与刷新 · 切回「今天」后的概览</figcaption></figure>
+<figure><img src="04-usage-after-refresh.png" alt="手动刷新之后的概览"><figcaption>用量概览的周期与刷新 · 手动刷新之后的概览</figcaption></figure>
+<figure><img src="05-usage-requests-tab.png" alt="「请求」标签"><figcaption>切换标签时被留下的读取 · 「请求」标签</figcaption></figure>
+<figure><img src="06-usage-back-to-overview.png" alt="回到「概览」后的画面"><figcaption>切换标签时被留下的读取 · 回到「概览」后的画面</figcaption></figure>
+</main></html>

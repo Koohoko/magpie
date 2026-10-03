@@ -1,0 +1,54 @@
+{
+  "summary": "这个 PR 在界面上看到的是「用量」页概览的数据读取方式：概览的每次读取（读者切周期/切标签触发的与定时/手动刷新触发的）现在共用同一个读取序号，只有最新一次的结果会被画出来，而且定时读取即使拿到与手上完全相同的数据，也会结束被顶掉的那次读取留下的骨架；供应商页那轮「列表还在路上」的轮询在读取或重载失败后也会重新排下一次，而不是就此停住。其余改动是 internal/plugin 的宿主读取与 CI/测试。",
+  "scenes": [
+    {
+      "title": "用量概览的周期与刷新",
+      "shots": [
+        {
+          "file": "01-usage-overview-today.png",
+          "caption": "打开「用量」页，概览停在「今天」",
+          "width": 2560
+        },
+        {
+          "file": "02-usage-overview-week.png",
+          "caption": "「7 天」周期的概览",
+          "width": 2560
+        },
+        {
+          "file": "03-usage-overview-back.png",
+          "caption": "切回「今天」后的概览",
+          "width": 2560
+        },
+        {
+          "file": "04-usage-after-refresh.png",
+          "caption": "手动刷新之后的概览",
+          "width": 2560
+        }
+      ]
+    },
+    {
+      "title": "切换标签时被留下的读取",
+      "shots": [
+        {
+          "file": "05-usage-requests-tab.png",
+          "caption": "「请求」标签",
+          "width": 2560
+        },
+        {
+          "file": "06-usage-back-to-overview.png",
+          "caption": "回到「概览」后的画面",
+          "width": 2560
+        }
+      ]
+    }
+  ],
+  "video": "preview.mp4",
+  "poster": "poster.png",
+  "errors": [],
+  "leak": false,
+  "skipped": null,
+  "mismatch": "",
+  "unseen": "这次修的两个竞态在这个沙盒里看不到：要让「旧周期/旧标签的答案后到」发生，必须把某一次 usage 读取卡在途中，再让另一次先回答；沙盒里的本地接口都是立刻返回，也没有能让读取悬住的手段，所以修复前后画面都一样。同样，「选择当前周期时出现的骨架由定时读取结束」需要那次被顶掉的读取慢到肉眼可见。供应商页那轮重试也看不到：它只在后端报告账号列表仍在路上（fetching）时才轮询，而沙盒只有一个 DeepSeek key、订阅账号一个都没有，页面永远不会进入那个状态。internal/plugin 与 internal/gateway 的流式/中止改动在界面之外，也无法从截图观察。",
+  "interactive": true,
+  "pages": 1
+}
