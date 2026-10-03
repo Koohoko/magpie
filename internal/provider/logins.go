@@ -179,6 +179,10 @@ func writePrivate(path string, b []byte) error {
 func upsertLogin(ls []savedLogin, l savedLogin) []savedLogin {
 	for i := range ls {
 		if sameLogin(ls[i], l) {
+			if l.Agent == "claude" && l.Lapsed == "" && ls[i].Lapsed != "" &&
+				claudeLoginVersion(l) == claudeLoginVersion(ls[i]) {
+				l.Lapsed = ls[i].Lapsed
+			}
 			l.On = l.On || ls[i].On
 			l.Paused = l.Paused || ls[i].Paused
 			l.Order = ls[i].Order
@@ -595,10 +599,12 @@ func Logins(agent string) []Login {
 		first := l.Agent == "claude" && strings.EqualFold(standIn, l.User)
 		lg := Login{Agent: l.Agent, User: l.User, Plan: l.Plan, Seen: l.Seen, Active: using, On: using || first || l.On,
 			Paused: (using || first) && pausedOwn(ls, l.Agent, l.User), first: first}
+		if l.Agent == "claude" {
+			lg.Lapsed = claudeSignedOut(l)
+		}
 		if !using {
-			lg.Lapsed = l.Lapsed
-			if lg.Lapsed == "" && l.Agent == "claude" {
-				lg.Lapsed = claudeSignedOut(l)
+			if l.Agent != "claude" {
+				lg.Lapsed = l.Lapsed
 			}
 			lg.Returns = l.On && strings.EqualFold(back[l.Agent], l.User)
 		}
@@ -766,6 +772,9 @@ func switchSavedLogin(agent, user string) (from string, _ error) {
 		return "", fmt.Errorf("no saved %s account %q", agent, user)
 	}
 	if agent == "claude" {
+		if target.Lapsed != "" {
+			return "", errors.New(claudeSignedOut(*target))
+		}
 		// as Claude Code keeps it, if it has run on the account beside the
 		// one it is signed in to
 		if c, ok := readClaudeDir(claudeAccountDir(target.User)); ok {

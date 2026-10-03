@@ -129,6 +129,7 @@ const (
 	failQuota  = "quota"
 	failRate   = "rate"
 	failOther  = "other"
+	failAuth   = "auth"
 	// failCanceled: the agent went away before the answer came
 	failCanceled = "canceled"
 	// failForeign: the conversation's reasoning was sealed by another
@@ -168,6 +169,9 @@ var proxyDown = regexp.MustCompile(`proxyconnect |socks connect `)
 
 // failure says why a reply failed.
 func failure(status int, body []byte) string {
+	if status >= 400 && provider.ClaudeSignInRequired(string(body)) {
+		return failAuth
+	}
 	if status == http.StatusBadGateway && proxyDown.Match(body) {
 		return failProxy
 	}

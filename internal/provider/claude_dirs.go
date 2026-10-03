@@ -49,8 +49,10 @@ func readClaudeDir(dir string) (claudeCredentials, bool) {
 		out, err := proc.Command("security", "find-generic-password", "-s", claudeDirService(dir), "-a", claudeKeychainAccount(), "-w").Output()
 		if err == nil {
 			b, _ := keychainText(bytes.TrimSpace(out))
-			if c, ok := parseClaudeCredentials(b); ok {
-				return c, true
+			if c, ok := parseClaudeCredentials(b); c.raw != nil {
+				// An existing, cleared keychain record is authoritative:
+				// a file left beside it must not resurrect the rejected login.
+				return c, ok
 			}
 		}
 	}
@@ -95,14 +97,25 @@ func claudeSavedDir(user string) (string, error) {
 	if i < 0 {
 		return "", fmt.Errorf("no saved claude account %q", user)
 	}
+	if ls[i].Lapsed != "" {
+		return "", errors.New(claudeSignedOut(ls[i]))
+	}
 	dir := claudeAccountDir(user)
-	if c, ok := readClaudeDir(dir); ok {
+	c, ok := readClaudeDir(dir)
+	if !ok && c.raw != nil {
+		ls[i].Lapsed = claudeAuthLapse
+		if err := writeLogins(ls); err != nil {
+			return "", err
+		}
+		return "", errors.New(claudeAuthLapse)
+	}
+	if ok {
 		if changed, err := takeClaudeDir(&ls[i], c); err != nil || !changed {
 			return dir, err
 		}
 		return dir, writeLogins(ls)
 	}
-	c, ok := parseClaudeCredentials(ls[i].Auth)
+	c, ok = parseClaudeCredentials(ls[i].Auth)
 	if !ok {
 		return "", errors.New("the saved Claude sign-in of " + user + " is unreadable")
 	}
@@ -163,7 +176,7 @@ func claudeStandIn(ls []savedLogin) string {
 	user, best := "", -1
 	var seen time.Time
 	for _, l := range ls {
-		if l.Agent != "claude" || l.Held || l.Lapsed == claudeLogoutLapse {
+		if l.Agent != "claude" || l.Held || l.Lapsed != "" {
 			continue
 		}
 		rank := 0
@@ -182,12 +195,13 @@ func claudeStandIn(ls []savedLogin) string {
 
 // claudeLogoutLapse is why the account Claude Code was signed in to can't
 // be used once Claude Code logged out.
-const claudeLogoutLapse = "Claude Code's /logout signed it out (it revokes the sign-in it holds); sign in again"
+const claudeLogoutLapse = "Claude Code is no longer signed in; sign in again in magpie"
+
+const legacyClaudeLogoutLapse = "Claude Code's /logout signed it out (it revokes the sign-in it holds); sign in again"
 
 // claudeLoggedOut marks the account Claude Code held, now that it is
-// signed out, as lapsed: /logout revokes the refresh token Claude Code
-// holds (POST <token URL>/revoke, Claude Code 2.1.x's performLogout), and
-// magpie's copy of that account is the same sign-in, so it is gone too.
+// signed out, as lapsed. The absence of a login does not tell whether the
+// user logged out or Claude Code cleared a rejected refresh token.
 // The accounts magpie keeps in config directories of their own are
 // sign-ins of their own and stay. It says whether ls changed.
 func claudeLoggedOut(ls []savedLogin) bool {
@@ -207,6 +221,12 @@ func claudeLoggedOut(ls []savedLogin) bool {
 // claudeSignedOut is why a saved Claude account can't be used: its saved
 // sign-in is gone, and it has to be signed in again; "" when it has one.
 func claudeSignedOut(l savedLogin) string {
+	if l.Lapsed != "" {
+		if l.Lapsed == legacyClaudeLogoutLapse {
+			return claudeLogoutLapse
+		}
+		return l.Lapsed
+	}
 	if _, ok := parseClaudeCredentials(l.Auth); ok {
 		return ""
 	}

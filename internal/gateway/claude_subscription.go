@@ -130,6 +130,8 @@ type subscriptionRun struct {
 	// --effort) or was told since (setEffort); "" is Claude Code's own
 	effort string
 
+	loginVersion string
+
 	// told is the conversation as the client had it in its last request
 	// here (historyKey): tool results are the run's while the client's
 	// conversation goes on from that one.
@@ -325,6 +327,9 @@ func (b *subscriptionBridge) start(ctx context.Context, req *Request, model, con
 	}
 
 	run := &subscriptionRun{bridge: b, token: token, model: model, cmd: cmd, tmp: tmp, schema: len(req.Schema) > 0, pending: map[string]chan mcpToolResult{}, stdin: stdin, owner: owner, effort: req.Effort}
+	if fields := strings.Split(owner, "\x00"); len(fields) > 1 {
+		run.loginVersion = provider.ClaudeLoginVersion(fields[1])
+	}
 	// A caller may abandon a turn after receiving tool_use. Do not leave the
 	// parked Claude process and MCP request alive forever.
 	run.timer = time.AfterFunc(30*time.Minute, run.abort)
@@ -850,6 +855,10 @@ func (r *subscriptionRun) readOutput(rd io.Reader) {
 					if len(envelope.Errors) > 0 {
 						text += ": " + strings.Join(envelope.Errors, "; ")
 					}
+				}
+				if fields := strings.Split(r.owner, "\x00"); len(fields) > 1 &&
+					!(len(fields) > 2 && fields[2] == ownHome && provider.ClaudeCodeMovedOff(fields[1])) {
+					provider.NoteClaudeSignInFailure(fields[1], r.loginVersion, text)
 				}
 				r.emit(Event{Kind: KError, Text: text, Status: envelope.APIErrorStatus, Code: errKind, RequestID: reqID})
 				r.endSegment()

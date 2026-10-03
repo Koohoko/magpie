@@ -170,7 +170,7 @@ func (p Provider) AlsoOn() []Provider {
 	}
 	var out []Provider
 	for _, l := range Logins(p.Account.Agent) {
-		if l.Active || l.first || !l.On {
+		if l.Active || l.first || !l.On || l.Lapsed != "" {
 			continue
 		}
 		agent, user := l.Agent, l.User
@@ -199,6 +199,9 @@ func (p Provider) AlsoOn() []Provider {
 // own — for a Claude account, the config directory Claude Code runs on it
 // in; ok is false for the agent's own, which the agent signs itself.
 func (a *Account) Token(ctx context.Context) (tok string, ok bool, err error) {
+	if msg := a.SignInError(); msg != "" {
+		return "", false, errors.New(msg)
+	}
 	if a == nil || a.token == nil {
 		return "", false, nil
 	}
