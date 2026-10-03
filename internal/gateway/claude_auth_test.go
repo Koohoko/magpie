@@ -3,6 +3,8 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -102,5 +104,30 @@ func TestClaudeAllRefusedSaysSignInAgain(t *testing.T) {
 	askClaudeModel(s, "first")
 	if rec := askClaudeModel(s, "second"); rec.Code == 200 || !strings.Contains(rec.Body.String(), "sign in again") {
 		t.Fatalf("not told to sign in again: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Another vendor saying a Claude sign-in's words (an OpenCode plugin on
+// Anthropic's OAuth: "OAuth access token has been revoked") isn't a Claude
+// account Anthropic refused: it rests as any failure does, and isn't told
+// as needing a sign-in that magpie would never try again (#716 review).
+func TestSignInWordsFromAnotherVendorRest(t *testing.T) {
+	fresh(t)
+	revoked := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		io.WriteString(w, `{"error":{"message":"OAuth access token has been revoked"}}`)
+	})
+	serveOn(t, "a", "ka", []string{"m"}, revoked)
+	serveOn(t, "b", "kb", []string{"m"}, &keyed{})
+	if err := provider.SaveGroup(provider.Group{Name: "Two", Members: []string{"a/m", "b/m"}, Routing: provider.Ordered}); err != nil {
+		t.Fatal(err)
+	}
+	s := New()
+	if code, body := postAs(t, s, "", `{"model":"group/two","messages":[{"role":"user","content":"hi"}]}`); code != 200 || !strings.Contains(body, "from kb") {
+		t.Fatalf("%d %s", code, body)
+	}
+	if r := lastRoute(s); len(r.Tries) != 2 || r.Tries[0].Fail == failAuth || r.Tries[0].Rest == nil {
+		t.Fatalf("not rested as before: %+v", r.Tries)
 	}
 }

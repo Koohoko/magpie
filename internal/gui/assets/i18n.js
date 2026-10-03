@@ -932,6 +932,7 @@ const I18N = {
     "sign-in required": "需要重新登录",
     "Sign in again to use this account": "重新登录后才能使用此账号",
     "Claude Code is no longer signed in; sign in again in magpie": "Claude Code 已没有有效登录，请在 magpie 中重新登录",
+    "its sign-in is gone; sign in again": "登录信息已不存在，请重新登录",
     "Claude Code could not authenticate this account; sign in again in magpie": "Claude Code 无法认证此账号，请在 magpie 中重新登录",
     "Tested {user}: {result}": "已测试 {user}：{result}",
     "{who} could not authenticate. Sign in again in magpie; this login is not retried. The request went to {next}.": "{who} 认证失败。请在 magpie 中重新登录；当前登录不再重试。请求已转给 {next}。",

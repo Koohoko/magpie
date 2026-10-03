@@ -29,15 +29,29 @@ const provider = {
     { user: expired.who, plan: "enterprise", on: true, lapsed: lapse },
   ] },
 };
+// Claude Code still signed in to the refused account: it can't be removed
+const signedInRefused = { ...provider, account: { ...provider.account, user: expired.who, logins: [
+  { user: expired.who, plan: "enterprise", active: true, on: true, lapsed: lapse },
+  { user: healthy.who, plan: "max", on: true },
+] } };
+// another subscription's lapse keeps its row as it was
+const codex = {
+  id: "codex", name: "Codex", icon: "codex-color", responses: "https://api.example.test", chat: "", anthropic: "", catalog: "",
+  models: [{ id: "gpt-6-luna", on: true }], agents: [], fallback: [], headers: {}, keyList: [], proxy: "",
+  account: { agent: "codex", agentName: "Codex", user: "a@example.com", plan: "plus", logins: [
+    { user: "a@example.com", plan: "plus", active: true, on: true },
+    { user: "b@example.com", plan: "plus", on: true, lapsed: "refresh token reused" },
+  ] },
+};
 
-function serve(lang) {
+function serve(lang, providers = [provider]) {
   return async (route) => {
     const url = new URL(route.request().url());
     const json = (data) => route.fulfill({ json: data });
     if (url.pathname === "/boot.js") return route.fulfill({ contentType: "text/javascript", body: `window.bootPrefs={lang:"${lang}",theme:"light",web:true};` });
     if (url.pathname === "/wails/runtime.js") return route.fulfill({ contentType: "text/javascript", body: "export const Window = {};" });
     if (url.pathname === "/api/state") return json({ agents: [{ id: "codex", name: "Codex", fields: [] }], profiles: [], settings: { lang, theme: "light" } });
-    if (url.pathname === "/api/providers") return json({ providers: [provider], presets: [], excluded: [], gateway: { running: true, window: true } });
+    if (url.pathname === "/api/providers") return json({ providers, presets: [], excluded: [], gateway: { running: true, window: true } });
     if (url.pathname === "/api/provider/test") return json({ results: [{ protocol: "anthropic", ok: true, ms: 300, model: healthy.model, account: healthy.who }], provider });
     if (url.pathname === "/api/gateway/trace") {
       if (url.searchParams.get("wait")) await new Promise((r) => setTimeout(r, 20e3));
@@ -101,6 +115,36 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await fs.mkdir(process.env.ARTIFACT_DIR, { recursive: true });
         await page.screenshot({ path: path.join(process.env.ARTIFACT_DIR, `${engine}-${lang}-claude-auth.png`) });
       }
+    });
+  }
+}
+
+for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
+  for (const lang of ["en", "zh"]) {
+    test(`${engine} ${lang}: only Claude rows need a new sign-in, and the signed-in one can't be removed`, async (t) => {
+      const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
+      t.after(() => browser.close());
+      const page = await (await browser.newContext({ viewport: { width: 1100, height: 800 }, reducedMotion: "reduce" })).newPage();
+      const errors = [];
+      page.on("pageerror", (e) => errors.push(e.message));
+      page.setDefaultTimeout(5000);
+      await page.route("**/*", serve(lang, [signedInRefused, codex]));
+      await page.goto("http://magpie.test/?view=providers");
+      await page.locator(".row.provider", { hasText: "Claude Code" }).first().click();
+      const own = page.locator(`.editor .acc[data-account-id="${expired.who}"]`);
+      await own.waitFor();
+      assert.equal(await own.locator(".dot").isDisabled(), true);
+      await own.getByRole("button", { name: lang === "zh" ? "重新登录" : "Sign in again", exact: true }).waitFor();
+      assert.equal(await own.getByRole("button", { name: lang === "zh" ? "移除" : "Remove", exact: true }).count(), 0, "Claude Code's own account can't be forgotten");
+
+      await page.goto("http://magpie.test/?view=providers");
+      await page.locator(".row.provider", { hasText: "Codex" }).first().click();
+      const other = page.locator('.editor .acc[data-account-id="b@example.com"]');
+      await other.waitFor();
+      assert.equal(await other.locator(".dot").isDisabled(), false, "a Codex account's dot still turns it off");
+      assert.equal(await other.locator(".dot svg").count(), 1, "a Codex account on is shown on");
+      assert.equal(await other.getByText(lang === "zh" ? "需要重新登录" : "Sign-in required", { exact: true }).count(), 0);
+      assert.deepEqual(errors, []);
     });
   }
 }

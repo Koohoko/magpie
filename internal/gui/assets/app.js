@@ -7858,7 +7858,11 @@ function renderAccounts(a, p) {
   const sub = subOf(a.agent);
   const list = el("div", "accts");
   const ls = loginsInOrder(a, p);
-  const several = ls.filter((l) => !l.lapsed && ((l.active && !l.paused) || l.on)).length > 1;
+  // a Claude account whose sign-in Anthropic refused, or that has none,
+  // can't be used till it is signed in again; another subscription's lapse
+  // shows on its quota line only, as before
+  const unusable = (l) => a.agent === "claude" && !!l.lapsed;
+  const several = ls.filter((l) => !unusable(l) && ((l.active && !l.paused) || l.on)).length > 1;
   // kept signed in to one of the user's choosing (#524), the first is the
   // first in use in the order, which Make first sets without a sign-in
   const kept = keptLogin(p);
@@ -7872,18 +7876,18 @@ function renderAccounts(a, p) {
   // the account Claude Code or Codex is signed in to can be paused while
   // another is on: the gateway passes over it, the agent staying signed in
   // to it (#263)
-  const pausable = (a.agent === "claude" || a.agent === "codex") && ls.some((l) => !l.lapsed && !l.active && l.on);
+  const pausable = (a.agent === "claude" || a.agent === "codex") && ls.some((l) => !unusable(l) && !l.active && l.on);
   const quota = loginUsageOf(a.agent);
   // the first, which magpie signed the agent out of while it was spent:
   // it is signed back in once it has room (#408)
   const back = ls.find((l) => l.returns && !l.active);
   for (const l of ls) {
-    const on = !l.lapsed && !l.paused && (l.active || l.on);
+    const on = !unusable(l) && !l.paused && (l.active || l.on);
     const row = el("div", "acc" + (on ? " in-use" : " off") + (l.user === justAdded ? " new" : ""));
     row.dataset.accountId = l.user;
     const dot = el("button", "dot tick");
     if (on) dot.append(svg(CHECK, 10, 2.2));
-    if (l.lapsed) {
+    if (unusable(l)) {
       dot.disabled = true;
       dot.title = t("Sign in again to use this account");
     } else if (l.active && (pausable || l.paused)) {
@@ -7901,13 +7905,17 @@ function renderAccounts(a, p) {
     const [amPill, amBox] = ls.length > 1 || accountModelsOf(p, l.user).length ? accountModels(p, l.user, false, l.user) : [];
     if (amPill) row.append(amPill);
     row.append(el("span", "grow"));
-    if (l.lapsed) {
+    if (unusable(l)) {
       row.append(el("span", "using", t("Sign-in required")));
       const again = el("button", "text", t("Sign in again"));
       again.onclick = () => startSignIn(a.agent);
-      const forget = el("button", "text quiet", t("Remove"));
-      forget.onclick = () => accountAction("login/forget", { agent: a.agent, user: l.user }, t("{user} removed", { user: l.user }));
-      row.append(again, forget);
+      row.append(again);
+      // the one Claude Code is signed in to can't be forgotten (ForgetLogin)
+      if (!l.active) {
+        const forget = el("button", "text quiet", t("Remove"));
+        forget.onclick = () => accountAction("login/forget", { agent: a.agent, user: l.user }, t("{user} removed", { user: l.user }));
+        row.append(forget);
+      }
     } else if (l.active && kept && l.user !== firstUser) {
       // signed in to, kept so, and tried at its place in the order
       const signed = el("span", "using", l.paused ? t("Paused") : t("Signed in"));
