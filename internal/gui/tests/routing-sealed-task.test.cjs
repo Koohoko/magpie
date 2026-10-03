@@ -38,6 +38,7 @@ const routes = [
   // Old traces do not say whether the task was sealed.
   route(101, {}),
   route(100, { sealedTask: true, rule: { n: 12, use: "claude/claude-opus-5-5", unready: true, turn: 1 } }),
+  route(99, { sealedTask: true, group: null, model: "codex/gpt-6-astra", order: [account] }),
 ];
 
 function serve(lang) {
@@ -83,6 +84,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.goto("http://magpie.test/?view=routing");
       await page.locator(".rt-req").nth(routes.length - 1).waitFor();
       const sealed = lang === "zh" ? /任务已加密.*只能使用 ChatGPT/ : /task is encrypted.*Only ChatGPT/;
+      const excluded = lang === "zh" ? /其他供应商（如 Claude）不参与选择/ : /other providers \(such as Claude\) are excluded/;
       const parent = lang === "zh" ? /回答了主代理/ : /answered the parent agent/;
       const selected = lang === "zh" ? /具体模型由 magpie/ : /magpie selects its model/;
       const allowance = lang === "zh" ? /剩余额度除以距重置的小时数/ : /remaining allowance per hour/;
@@ -91,6 +93,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.locator(".rt-req").first().click();
       await page.waitForFunction((pattern) => new RegExp(pattern).test(document.querySelector(".rt-steps").textContent), sealed.source);
       assert.match(await story(), sealed);
+      assert.match(await story(), excluded);
       assert.match(await story(), parent);
       assert.match(await story(), selected);
       assert.doesNotMatch(await page.locator(".rt-steps li.why").first().textContent(), allowance);
@@ -121,8 +124,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.locator(".rt-req").nth(5).click();
       await page.waitForFunction(() => document.querySelector(".rt-steps").textContent.includes("12"));
       assert.match(await story(), sealed);
-      assert.match(await story(), lang === "zh" ? /适用于本次请求的候选/ : /no eligible candidate/);
-      assert.doesNotMatch(await story(), lang === "zh" ? /没有可用的账号或 Key/ : /nothing ready now/);
+      assert.match(await story(), lang === "zh" ? /没有能接这次请求的账号或 Key/ : /no account or key that can take this request/);
+      assert.doesNotMatch(await story(), lang === "zh" ? /候选/ : /eligible candidate/);
+      await page.locator(".rt-req").nth(6).click();
+      await page.waitForFunction((pattern) => !new RegExp(pattern).test(document.querySelector(".rt-steps").textContent), selected.source);
+      assert.match(await story(), sealed);
+      assert.doesNotMatch(await story(), excluded);
+      assert.doesNotMatch(await story(), /Claude/);
       assert.deepEqual(errors, []);
     });
   }
