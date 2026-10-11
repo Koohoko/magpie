@@ -1,6 +1,7 @@
 package sessions
 
 import (
+	"cmp"
 	"math"
 	"slices"
 	"sort"
@@ -31,6 +32,13 @@ type ExternalSession struct {
 // read-only (no file of the agent's to resume or open) with a gateway transcript
 // reader; magpie's own record of one is deleted by DeleteGateway.
 func MergeExternal(native []Session, external []ExternalSession) []Session {
+	var ids []string
+	for _, e := range external {
+		if e.Agent == "claude-desktop" {
+			ids = append(ids, e.ID)
+		}
+	}
+	names := DesktopTitles(ids)
 	seen := map[string]bool{}
 	for _, s := range native {
 		seen[s.Agent+"|"+s.ID] = true
@@ -41,6 +49,9 @@ func MergeExternal(native []Session, external []ExternalSession) []Session {
 			continue
 		}
 		s := Session{ReadOnly: true, Gateway: true, Transcript: true, Agent: e.Agent, ID: e.ID, Title: e.ID, Start: e.Start, Last: e.Last, Models: []Model{}, Unpriced: e.Unpriced}
+		if e.Agent == "claude-desktop" {
+			s.Title = cmp.Or(names[e.ID], s.Title)
+		}
 		for _, m := range e.Models {
 			s.Models = append(s.Models, Model{Model: m.Model, Tokens: m.Tokens, Cost: m.Cost, Priced: m.Priced})
 			s.Tokens.add(m.Tokens)
