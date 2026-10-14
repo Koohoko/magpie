@@ -61,6 +61,9 @@ type Route struct {
 	// Subagent is a Codex or Claude Desktop subagent's request put on
 	// the model set for its subagents, or kept on the one asked for and why
 	Subagent *SubagentPick `json:"subagent,omitempty"`
+	// SubagentEffort is Desktop's configured effort. Tries keep the actual
+	// level after member overrides and fitting to the model.
+	SubagentEffort string `json:"subagentEffort,omitempty"`
 	// Nested: the rules of the groups in the group, down the way to the
 	// one that went first, each as it decided
 	Nested   []NestedRule `json:"nested,omitempty"`

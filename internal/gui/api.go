@@ -873,7 +873,7 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			return
 		}
 		s := state()
-		if a.Notice != nil && (!f.Live || !wired) {
+		if a.Notice != nil && (!f.Live || !wired && a.Wired()) {
 			s.Notice = a.Notice()
 		}
 		writeJSON(rw, s)
@@ -1218,6 +1218,7 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		// in their Agents rows
 		in.CodexSubagentModel = cur.CodexSubagentModel
 		in.DesktopSubagentModel = cur.DesktopSubagentModel
+		in.DesktopSubagentEffort = cur.DesktopSubagentEffort
 		in.ChinaMirror = cur.ChinaMirror // the Plugins page's, set on its own
 		// which Codex accounts spend a reset by themselves, set on the Usage card
 		in.CodexAutoReset = cur.CodexAutoReset
