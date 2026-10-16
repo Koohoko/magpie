@@ -1,0 +1,256 @@
+From d845791bef78590da94e50d6c20a187eb4cc95e8 Mon Sep 17 00:00:00 2001
+From: Haogao Gu <koohoko@gmail.com>
+Date: Thu, 15 Oct 2026 23:18:41 -0400
+Subject: [PATCH] gui: requests without a session ID can fold in Routing
+
+Koohoko reported that the No session ID heading could not fold while
+all surrounding session headings could. groupedRows rendered the empty
+key as a div and skipped its click handler, arrow and aria-expanded.
+Routing classifier calls can fill this group on a busy day.
+
+Make the heading a button and use the existing fold state for its empty
+key. Click and Enter fold or expand it, and a live update that moves the
+group to the top keeps both the heading element and its fold. The label,
+identity tooltip and metric gating retain their previous meaning.
+
+Update the three div-only test selectors and the test README. The new
+case covers Chromium/WebKit, en/zh/zh-TW/ja/de, and widths 1100/420. It
+uses wheel input for the outer view and nested request list, because
+the app deliberately reverses unsolicited automatic scrolling.
+
+Verification on base 674b6ca2881f1289c4ccdec158762978a463320c:
+- Final routing-sessions file: 58/58 pass. Its 20 new cases run against
+  the unchanged production code: 0 pass, 20 fail, all at aria-expanded
+  (null instead of true).
+- Initial wider GUI run, 134 files: fixed 1602/1604, base 1600/1600.
+  Fixed-only WebKit failures: group-member-weight en 420, 1271 vs 1270
+  (same failure class as yetone/magpie#2387); routing-kind zh, one kind
+  story after selecting an untagged request, expected zero. Neither
+  enables session grouping. Both files subsequently passed 8/8 separate
+  runs on each tree. The initial failures remain unexplained; this is
+  not an all-green wider run. No assertions in those files changed.
+- Go 1.26.8: go test -tags nogui -timeout 45m ./... passes (66 packages
+  with tests, 18 without). Temporary HOME, existing Go caches pinned.
+- Darwin, Linux (nogui), Windows: vet and build all pass. The first
+  attempt lacked cached x/net v0.56.0; after downloading the version
+  pinned in go.mod, all checks above completed. Existing Darwin CGImage
+  enum-conversion warning remains.
+- node --check and git diff --check pass. No Go files changed.
+- Synthetic before/after frontend screenshots: six classifier rows
+  stay visible before, zero rows after clicking every group heading.
+
+Not run: native Wails window, Linux/Windows devices, complete GUI suite.
+The installed app and live gateway were not replaced or restarted.
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>
+---
+ internal/gui/assets/plugins/routing/client.js | 11 ++-
+ internal/gui/tests/README.md                  | 12 ++-
+ internal/gui/tests/routing-sessions.test.cjs  | 93 ++++++++++++++++++-
+ 3 files changed, 105 insertions(+), 11 deletions(-)
+
+diff --git a/internal/gui/assets/plugins/routing/client.js b/internal/gui/assets/plugins/routing/client.js
+index 4947ee27..c482f91c 100644
+--- a/internal/gui/assets/plugins/routing/client.js
++++ b/internal/gui/assets/plugins/routing/client.js
+@@ -2431,10 +2431,13 @@ function routingPage(part) {
+     for (const g of groups.values()) {
+       let x = sessionRows.get(g.key);
+       if (!x) {
+-        const b = el(g.key ? "button" : "div", "rt-session"), name = el("span", "nm"), meta = el("span", "summary"), cost = el("span", "cost"), arrow = el("span", "arrow");
++        // the requests with no session ID fold too: they are not one
++        // conversation, but a routing group's classifier, asked before
++        // each turn, can fill the list with them
++        const b = el("button", "rt-session"), name = el("span", "nm"), meta = el("span", "summary"), cost = el("span", "cost"), arrow = el("span", "arrow");
+         b.append(arrow, name, meta, cost);
+         x = { b, name, meta, cost, arrow };
+-        if (g.key) b.onclick = () => {
++        b.onclick = () => {
+           if (closedSessions.has(g.key)) closedSessions.delete(g.key); else closedSessions.add(g.key);
+           steady(renderHist);
+         };
+@@ -2455,7 +2458,7 @@ function routingPage(part) {
+         }
+         return s;
+       }, { cost: 0, tokens: 0, priced: 0, unpriced: 0, running: 0, completed: 0, prompt: 0, read: 0, cached: 0, decodeMs: 0, decodeOut: 0, timed: 0 });
+-      setText(x.arrow, g.key ? open ? "▾" : "▸" : "");
++      setText(x.arrow, open ? "▾" : "▸");
+       // Background workers have their own IDs. Label groups made entirely
+       // for one purpose without renaming a chat that also made helper calls.
+       const memory = g.r.agent === "codex" && g.rows.every((r) => purposeOf(r.kind) === "kind:memory_consolidation");
+@@ -2490,7 +2493,7 @@ function routingPage(part) {
+       setText(x.cost, total.priced ? "≈" + fmtCost({ cost: total.cost, unpriced: 0 }) + (total.unpriced ? "+" : "") : "");
+       x.cost.hidden = !visibleMetrics.includes("cost") || !total.priced;
+       x.cost.title = costNote();
+-      if (g.key) x.b.setAttribute("aria-expanded", String(open));
++      x.b.setAttribute("aria-expanded", String(open));
+       els.push(x.b);
+       if (open) els.push(...g.els);
+     }
+diff --git a/internal/gui/tests/README.md b/internal/gui/tests/README.md
+index de885e7f..98f39c1d 100644
+--- a/internal/gui/tests/README.md
++++ b/internal/gui/tests/README.md
+@@ -161,7 +161,7 @@ node --test internal/gui/tests/routing-sealed-task.test.cjs
+ ```
+ 
+ `routing-sessions.test.cjs` checks the Routing request list in Chromium and
+-WebKit, English and Chinese: the list defaults to By request and remembers
++WebKit: the list defaults to By request and remembers
+ the grouping choice across reloads; sessions are separated by agent and ID across
+ model changes, known and partial costs are summed, zero partial estimates
+ retain their amount and +, single-request headings use the singular, zero prices stay known,
+@@ -169,11 +169,15 @@ title helpers merge only into their explicit parent (even arriving first),
+ unnamed Codex memory-only groups explain their background purpose while keeping
+ separate IDs, costs and folds; named and mixed chat groups keep their titles,
+ late chat names and renames update while preserving folds and ID tooltips,
+-missing IDs and old unpriced requests remain visible, folded sessions stay
++missing IDs and old unpriced requests remain visible, the requests with no
++session ID fold as a session's do (by click or Enter, and through a live
++update that moves their group to the top), folded sessions stay
+ folded through live updates, costs follow the currency choice, and the original
+ time-ordered list, history selection and routing story still work. It also
+-checks the request list at 1440 and 560 pixels. Run with
+-`node --test internal/gui/tests/routing-sessions.test.cjs` and the same
++checks the request list at 1440 and 560 pixels. The cases run in English and
++Chinese; the no-session fold check also covers Traditional Chinese, Japanese
++and German, at 1100 and 420 pixels.
++Run with `node --test internal/gui/tests/routing-sessions.test.cjs` and the same
+ Playwright environment described below. APIs are isolated fixtures.
+ 
+ `session-terminal.test.cjs` checks the macOS Settings choice for installed
+diff --git a/internal/gui/tests/routing-sessions.test.cjs b/internal/gui/tests/routing-sessions.test.cjs
+index de599410..7c591a88 100644
+--- a/internal/gui/tests/routing-sessions.test.cjs
++++ b/internal/gui/tests/routing-sessions.test.cjs
+@@ -26,6 +26,8 @@ const initial = [req(1, "codex", "conversation-a", 0.01), req(2, "claude", "conv
+   req(3, "codex", "conversation-a", 0, false), req(4, "codex", "conversation-b", 0.02),
+   req(5, "codex", "conversation-a", 0.02), req(6, "codex", "", 0, false)];
+ 
++const noSession = (lang) => ({ en: "No session ID", zh: "未提供会话标识", "zh-TW": "未提供會話標識", ja: "セッション ID なし", de: "Keine Sitzungs-ID" })[lang];
++
+ function serve(lang, feed, fixture = initial) {
+   return async (route) => {
+     const url = new URL(route.request().url());
+@@ -73,7 +75,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
+       assert.match(await group.locator(".summary").textContent(), lang === "zh" ? /3 个请求.*6.0k/ : /3 requests.*6.0k/);
+       assert.equal(await group.locator(".cost").textContent(), "≈$0.030+", "partial totals must be marked");
+       assert.equal(await page.locator("button.rt-session").filter({ hasText: "Claude Code" }).locator(".cost").textContent(), "≈$0.000", "zero price is known");
+-      assert.equal(await page.locator("div.rt-session .cost").isVisible(), false, "unknown cost is omitted for legacy requests");
++      const none = page.locator(".rt-session").filter({ hasText: noSession(lang) });
++      assert.equal(await none.count(), 1);
++      assert.equal(await none.locator(".cost").isVisible(), false, "unknown cost is omitted for legacy requests");
+       assert.equal(await page.locator(".rt-req").count(), 6);
+ 
+       await group.click();
+@@ -124,6 +128,89 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
+   }
+ }
+ 
++for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
++  for (const lang of ["en", "zh", "zh-TW", "ja", "de"]) for (const width of [1100, 420]) {
++    test(`${engine} ${lang} ${width}: requests with no session ID fold and unfold as a session's do`, async (t) => {
++      const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
++      const page = await browser.newPage({ viewport: { width, height: 800 }, reducedMotion: "reduce" });
++      page.setDefaultTimeout(5000);
++      const errors = [], feed = {};
++      // a routing group's classifier, asked before each turn, sends no session ID
++      const classifier = (id) => ({ ...req(id, "magpie", "", 0.001), kind: "routing" });
++      // newest first, a session's group heads the list, the classifier's second
++      const fixture = [req(1, "codex", "conversation-a", 0.01), classifier(2), req(3, "claude", "conversation-b", 0.02), classifier(4), req(5, "codex", "conversation-a", 0.01)];
++      page.on("pageerror", (e) => errors.push(e.message));
++      await page.route("**/*", serve(lang, feed, fixture));
++      t.after(async () => { feed.next?.([]); await browser.close(); });
++      await page.goto("http://magpie.test/?view=routing");
++      await reach(page, page.locator(".rt-group-by button").nth(1));
++      await page.locator(".rt-group-by button").nth(1).click();
++      await page.locator(".rt-session").nth(2).waitFor();
++      const none = page.locator(".rt-session").filter({ hasText: noSession(lang) });
++      // The request list scrolls inside the page. Wheel that list too when
++      // its second heading is clipped in a narrow window.
++      const reachNone = async () => {
++        const list = page.locator(".rt-reqs");
++        await reach(page, list);
++        await list.hover();
++        for (let i = 0; i < 20; i++) {
++          const dy = await none.evaluate((e) => {
++            const b = e.getBoundingClientRect(), box = e.parentElement.getBoundingClientRect();
++            return b.top < box.top + 4 ? -80 : b.bottom > box.bottom - 4 ? 80 : 0;
++          });
++          if (!dy) return;
++          const was = await list.evaluate((e) => e.scrollTop);
++          await page.mouse.wheel(0, dy);
++          await page.waitForFunction((top) => document.querySelector(".rt-reqs").scrollTop !== top, was);
++        }
++        assert.fail("no-session heading did not come into the request list's viewport");
++      };
++      assert.equal(await none.count(), 1);
++      assert.equal(await none.getAttribute("aria-expanded"), "true");
++      assert.equal(await none.locator(".arrow").textContent(), "▾");
++      assert.equal(await page.locator(".rt-req").count(), 5);
++
++      const tooltip = await none.locator(".nm").getAttribute("title");
++      assert(tooltip);
++      if (lang === "en" || lang === "zh") assert.match(tooltip, lang === "zh" ? /不视为同一个会话/ : /not treated as one conversation/);
++      await reachNone();
++      await none.click();
++      assert.equal(await none.getAttribute("aria-expanded"), "false");
++      assert.equal(await none.locator(".arrow").textContent(), "▸");
++      assert.equal(await page.locator(".rt-req").count(), 3, "the classifier's rows fold away, the sessions' stay");
++      assert.equal(await page.locator(".rt-session").count(), 3);
++
++      // a classifier call that comes in while folded moves its group to the
++      // top: it stays folded, under the same heading
++      const handle = await none.elementHandle();
++      for (let i = 0; i < 50 && !feed.next; i++) await page.waitForTimeout(20);
++      assert(feed.next, "long poll started");
++      feed.next([classifier(6)]);
++      await page.waitForFunction((name) => {
++        const group = document.querySelector(".rt-session");
++        return group?.querySelector(".nm").textContent === name && /^3\b/.test(group.querySelector(".session-count").textContent);
++      }, noSession(lang));
++      assert.equal(await page.locator(".rt-session").first().locator(".nm").textContent(), noSession(lang), "the newest request's group comes first");
++      assert.equal(await none.getAttribute("aria-expanded"), "false");
++      assert(await none.evaluate((e, previous) => e === previous, handle), "live update replaced the heading");
++      assert.equal(await page.locator(".rt-req").count(), 3);
++
++      // Enter activates the focused heading, as it does the other buttons
++      await reachNone();
++      await none.focus();
++      await page.keyboard.press("Enter");
++      await page.waitForFunction(() => document.querySelectorAll(".rt-req").length === 6);
++      assert.equal(await none.getAttribute("aria-expanded"), "true");
++      // still not one conversation: its name and title say so, as before
++      assert.equal(await none.locator(".nm").textContent(), noSession(lang));
++      assert.equal(await none.locator(".nm").getAttribute("title"), tooltip);
++      const fit = await page.locator(".rt-reqs").evaluate((e) => ({ client: e.clientWidth, scroll: e.scrollWidth }));
++      assert(fit.scroll <= fit.client + 1, `request list overflows at ${width}: ${JSON.stringify(fit)}`);
++      assert.deepEqual(errors, []);
++    });
++  }
++}
++
+ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
+   for (const lang of ["en", "zh"]) {
+     test(`${engine} ${lang}: background memory groups explain their purpose and keep their own identity`, async (t) => {
+@@ -160,7 +247,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
+       assert.equal(await group("named-memory").locator(".nm").textContent(), "Codex · Named memory");
+       assert.equal(await group("mixed").locator(".nm").textContent(), "Codex · mixed");
+       assert.equal(await group("unknown").locator(".nm").textContent(), "Codex · unknown");
+-      assert.equal(await page.locator("div.rt-session .nm").textContent(), lang === "zh" ? "未提供会话标识" : "No session ID");
++      assert.equal(await page.locator(".rt-session").filter({ hasText: noSession(lang) }).locator(".nm").textContent(), noSession(lang));
+       assert.equal(await page.locator(".rt-session").count(), 7, "separate memory IDs must not merge with each other or the chat");
+ 
+       const memory = group("memory-a"), handle = await memory.elementHandle();
+@@ -239,7 +326,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
+       assert.equal(await group("mixed").locator(".nm").textContent(), "Codex · mixed");
+       assert.equal(await group("named-chat").locator(".nm").textContent(), "Codex · Chat title");
+       assert.equal(await group("other-agent").locator(".nm").textContent(), "Claude Code · other-agent");
+-      assert.equal(await page.locator("div.rt-session .nm").textContent(), lang === "zh" ? "未提供会话标识" : "No session ID");
++      assert.equal(await page.locator(".rt-session").filter({ hasText: noSession(lang) }).locator(".nm").textContent(), noSession(lang));
+       assert.equal(await page.locator(".rt-session").count(), 8, "suggestion workers retain separate session groups");
+       assert.deepEqual(errors, []);
+     });
+-- 
+2.50.1 (Apple Git-155)
+
